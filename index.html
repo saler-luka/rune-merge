@@ -32,8 +32,10 @@
 @supports (height: 100dvh) {
   :root { --board: max(230px, min(calc(100vw - 32px), 440px, calc(100dvh - 370px))); }
 }
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
+  margin: 0;
   background: radial-gradient(ellipse 90% 60% at 50% -10%, #20303b 0%, rgba(17,23,28,0) 70%), var(--bg);
   color: var(--ink);
   font-family: var(--f-body);
