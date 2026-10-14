@@ -1,0 +1,972 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="A roguelite merge puzzle with Elder Futhark runes.">
+<title>Rune Merge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;500;700;800&family=Noto+Sans+Runic&family=Uncial+Antiqua&display=swap">
+<style>
+/* Layout: one centered column sized to a phone screen: name + HUD, mana gauge, carved 5×5 stone board, spell row, run actions */
+:root {
+  --bg: #11171c;
+  --bg2: #18212a;
+  --cell: #131a20;
+  --line: #2e3b46;
+  --ink: #ece4d2;
+  --muted: #8f9ba1;
+  --gold: #e2a94b;
+  --gold-ink: #2a1a05;
+  --mana: #63b8d1;
+  --mana-deep: #2b6a80;
+  --stone-a: #3b4249;
+  --stone-b: #333a40;
+  --f-display: "Uncial Antiqua", "Palatino Linotype", Georgia, serif;
+  --f-body: "Alegreya Sans", "Segoe UI", system-ui, sans-serif;
+  --f-rune: "Noto Sans Runic", "Segoe UI Historic", "Segoe UI Symbol", sans-serif;
+  --gap: clamp(6px, 1.6vw, 10px);
+  --board: max(230px, min(calc(100vw - 32px), 440px, calc(100vh - 370px)));
+  color-scheme: dark;
+}
+@supports (height: 100dvh) {
+  :root { --board: max(230px, min(calc(100vw - 32px), 440px, calc(100dvh - 370px))); }
+}
+html, body { height: 100%; }
+body {
+  background: radial-gradient(ellipse 90% 60% at 50% -10%, #20303b 0%, rgba(17,23,28,0) 70%), var(--bg);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 16px;
+  padding-inline: 16px;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+.app {
+  width: min(100%, 460px);
+  margin: 0 auto;
+  padding-block: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 {
+  margin: 0;
+  font-family: var(--f-display);
+  font-weight: 400;
+  font-size: 28px;
+  letter-spacing: .02em;
+  color: var(--gold);
+  text-shadow: 0 0 18px rgba(226,169,75,.25);
+}
+.icons { display: flex; gap: 6px; }
+.icon-btn {
+  min-width: 36px; height: 36px; padding: 0 10px;
+  border-radius: 999px; border: 1px solid var(--line);
+  background: var(--bg2); color: var(--muted);
+  font: 700 14px var(--f-body); cursor: pointer;
+}
+.icon-btn:hover { color: var(--ink); }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 6px 10px; border-radius: 10px;
+  background: var(--bg2); border: 1px solid var(--line);
+}
+.stat .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+.stat .val { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.stat.shard .val { color: var(--gold); }
+.meta-row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); }
+.meta-row b { color: var(--ink); font-weight: 700; }
+.meta-row .rg { font-family: var(--f-rune); color: var(--gold); }
+#threat.hot b { color: #e08a6d; }
+
+.mana {
+  position: relative; height: 22px; border-radius: 999px;
+  background: var(--cell); border: 1px solid var(--line); overflow: hidden;
+}
+.mana-fill {
+  position: absolute; inset: 0 auto 0 0; width: 0;
+  background: linear-gradient(90deg, var(--mana-deep), var(--mana));
+  box-shadow: 0 0 14px rgba(99,184,209,.45);
+  transition: width .3s ease-out;
+}
+.mana-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(236,228,210,.35); }
+.mana-text {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; letter-spacing: .04em;
+  font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgba(0,0,0,.8);
+}
+
+.board-wrap { position: relative; width: var(--board); margin: 0 auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+.board {
+  position: relative; width: var(--board); height: var(--board); box-sizing: border-box;
+  padding: var(--gap); border-radius: 16px;
+  background: linear-gradient(160deg, #27333d, #1a232b);
+  border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 18px 40px rgba(0,0,0,.45);
+}
+.cells { display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(5, 1fr); gap: var(--gap); width: 100%; height: 100%; }
+.cell { background: var(--cell); border-radius: 10px; box-shadow: inset 0 2px 6px rgba(0,0,0,.55); }
+.tiles { position: absolute; inset: var(--gap); }
+.tile {
+  --h: 205; --r: 0; --c: 0;
+  position: absolute; left: 0; top: 0;
+  width: calc((100% - 4 * var(--gap)) / 5);
+  height: calc((100% - 4 * var(--gap)) / 5);
+  transform: translate(calc(var(--c) * (100% + var(--gap))), calc(var(--r) * (100% + var(--gap))));
+  transition: transform 110ms ease-out;
+  z-index: 2;
+}
+.face {
+  position: relative; width: 100%; height: 100%; box-sizing: border-box;
+  display: grid; place-items: center; border-radius: 10px;
+  background: linear-gradient(160deg, hsl(var(--h) 42% 33%), hsl(var(--h) 52% 17%));
+  border: 1px solid hsl(var(--h) 60% 58% / .55);
+  box-shadow: inset 0 1px 0 hsl(var(--h) 80% 85% / .22), 0 0 var(--glow, 0px) hsl(var(--h) 90% 60% / .55);
+}
+.glyph {
+  font-family: var(--f-rune); line-height: 1;
+  font-size: calc(var(--board) / 5 * .46);
+  color: hsl(var(--h) 95% 84%);
+  text-shadow: 0 0 12px hsl(var(--h) 90% 60% / .75);
+}
+.tn {
+  position: absolute; right: 7%; bottom: 4%;
+  font-size: calc(var(--board) / 5 * .16); font-weight: 800;
+  color: hsl(var(--h) 40% 82% / .75); font-variant-numeric: tabular-nums;
+}
+.tile.ascended .face { border: 2px solid var(--gold); animation: shimmer 2.4s ease-in-out infinite; }
+@keyframes shimmer { 50% { filter: brightness(1.25) saturate(1.2); } }
+.tile.stone .face {
+  background: repeating-linear-gradient(135deg, var(--stone-a) 0 7px, var(--stone-b) 7px 14px);
+  border: 1px solid #5b646c; box-shadow: inset 0 -3px 0 rgba(0,0,0,.35);
+}
+.tile.stone .crack {
+  width: 46%; height: 46%;
+  background: linear-gradient(115deg, transparent 44%, #1d2226 45%, #1d2226 52%, transparent 53%),
+              linear-gradient(35deg, transparent 47%, #1d2226 48%, #1d2226 53%, transparent 54%);
+  opacity: .7;
+}
+.tile.new .face { animation: appear 180ms 90ms ease-out backwards; }
+.tile.merged { z-index: 3; }
+.tile.merged .face { animation: pop 240ms 90ms ease-out backwards; }
+.tile.pulse .face { animation: pop 280ms ease-out; }
+.tile.vanish { z-index: 4; }
+.tile.vanish .face { animation: vanish 260ms ease-in forwards; }
+@keyframes appear { from { transform: scale(0); opacity: 0; } }
+@keyframes pop { 0% { transform: scale(.6); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
+@keyframes vanish { to { transform: scale(1.35) rotate(10deg); opacity: 0; } }
+
+.board-wrap.targeting .tile .face { cursor: crosshair; outline: 2px dashed rgba(99,184,209,.7); outline-offset: -4px; }
+.board-wrap.targeting .tile:hover .face { filter: brightness(1.3); }
+.board-wrap.shake { animation: shake 260ms; }
+.board-wrap.shake-big { animation: shakeBig 420ms; }
+@keyframes shake { 20% { transform: translate(-4px, 2px); } 40% { transform: translate(4px, -2px); } 60% { transform: translate(-3px, 1px); } 80% { transform: translate(3px, -1px); } }
+@keyframes shakeBig { 15% { transform: translate(-8px, 4px) rotate(-.6deg); } 30% { transform: translate(8px, -4px) rotate(.6deg); } 50% { transform: translate(-6px, 2px); } 70% { transform: translate(5px, -2px); } 85% { transform: translate(-2px, 1px); } }
+
+.toast {
+  position: absolute; left: 50%; top: 10px; transform: translate(-50%, -6px);
+  max-width: 88%; padding: 7px 14px; border-radius: 999px;
+  background: rgba(17,23,28,.94); border: 1px solid var(--line);
+  font-size: 14px; text-align: center; z-index: 6;
+  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.banner { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 7; }
+.banner-card {
+  text-align: center; padding: 18px 26px; border-radius: 16px;
+  background: rgba(17,23,28,.9); border: 1px solid var(--gold);
+  box-shadow: 0 0 40px rgba(226,169,75,.35);
+  animation: bannerIn 1900ms ease-out forwards;
+}
+.banner-card .bg { font-family: var(--f-rune); font-size: 64px; line-height: 1.1; color: var(--gold); text-shadow: 0 0 20px rgba(226,169,75,.8); }
+.banner-card .bt { font-family: var(--f-display); font-size: 20px; margin-top: 4px; }
+.banner-card .bm { font-size: 14px; color: var(--muted); }
+.banner-card .bb { margin-top: 6px; font-weight: 800; color: var(--gold); }
+@keyframes bannerIn { 0% { opacity: 0; transform: scale(.7); } 12% { opacity: 1; transform: scale(1.05); } 20% { transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-14px); } }
+
+.spells { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.spell {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0;
+  padding: 7px 4px 6px; border-radius: 12px; cursor: pointer;
+  background: var(--bg2); border: 1px solid var(--line); color: var(--ink); font-family: var(--f-body);
+}
+.spell .sg { font-family: var(--f-rune); font-size: 22px; line-height: 1.15; color: var(--muted); }
+.spell .sn { font-size: 13px; font-weight: 700; }
+.spell .sc { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.spell.ready { border-color: var(--mana); box-shadow: inset 0 0 0 1px var(--mana), 0 0 14px rgba(99,184,209,.25); }
+.spell.ready .sg { color: var(--mana); }
+.spell.active { background: #1d3a47; }
+.spell.locked { opacity: .5; }
+.spell.flash { animation: flash 600ms ease-out; }
+@keyframes flash { 30% { transform: scale(1.08); box-shadow: 0 0 22px rgba(99,184,209,.7); } }
+
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn {
+  position: relative; flex: 1 1 auto; padding: 9px 14px; border-radius: 10px; cursor: pointer;
+  background: var(--bg2); border: 1px solid var(--line); color: var(--ink);
+  font: 700 15px var(--f-body);
+}
+.btn:hover:not(:disabled) { border-color: #4a5c6a; }
+.btn.primary { background: var(--gold); border-color: var(--gold); color: var(--gold-ink); }
+.btn:disabled { opacity: .45; cursor: default; }
+.badge {
+  position: absolute; top: -7px; right: -5px; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box;
+  border-radius: 999px; background: var(--gold); color: var(--gold-ink); font-size: 12px; font-weight: 800;
+  display: grid; place-items: center; animation: flash 1.6s ease-in-out infinite;
+}
+.hint { margin: 0; text-align: center; font-size: 13px; color: var(--muted); }
+button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+#fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 30; }
+.float {
+  position: fixed; z-index: 35; pointer-events: none; white-space: nowrap;
+  font-family: var(--f-display); font-size: 22px; color: var(--gold);
+  text-shadow: 0 2px 8px rgba(0,0,0,.9);
+  animation: floatUp 900ms ease-out forwards;
+}
+.float.combo { font-size: 28px; color: var(--mana); }
+.float.small { font-size: 16px; color: var(--ink); }
+@keyframes floatUp {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(.8); }
+  15% { opacity: 1; transform: translate(-50%, -60%) scale(1.1); }
+  100% { opacity: 0; transform: translate(-50%, -170%) scale(1); }
+}
+
+.modal {
+  position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 16px;
+  background: rgba(6,9,12,.74); backdrop-filter: blur(3px);
+}
+.sheet {
+  width: min(100%, 440px); max-height: min(88vh, 720px); overflow: auto; box-sizing: border-box;
+  padding: 22px 20px; border-radius: 18px;
+  background: var(--bg2); border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0,0,0,.6);
+  animation: appear 200ms ease-out;
+}
+.sheet h2 { margin: 0 0 8px; font-family: var(--f-display); font-weight: 400; font-size: 24px; color: var(--gold); text-wrap: balance; }
+.sheet p { margin: 0 0 10px; line-height: 1.45; }
+.sheet .note { font-size: 14px; color: var(--muted); }
+.sheet-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.purse { font-weight: 800; color: var(--gold); font-variant-numeric: tabular-nums; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.rules { margin: 0 0 4px; padding-left: 20px; line-height: 1.45; display: grid; gap: 6px; }
+.rules .rg, .upg .rg { font-family: var(--f-rune); color: var(--mana); margin-right: 4px; }
+.upg-list { display: grid; gap: 8px; margin-top: 10px; }
+.upg { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--cell); border: 1px solid var(--line); }
+.upg-main { flex: 1; min-width: 0; }
+.upg-name { font-weight: 800; }
+.upg-desc { font-size: 14px; color: var(--muted); line-height: 1.35; }
+.upg .btn { flex: 0 0 auto; min-width: 82px; font-variant-numeric: tabular-nums; }
+.pips { display: flex; gap: 4px; margin-top: 6px; }
+.pips i { width: 14px; height: 5px; border-radius: 3px; background: var(--line); }
+.pips i.on { background: var(--gold); }
+.go-hero { display: flex; align-items: center; gap: 14px; margin: 6px 0 12px; }
+.go-rune { font-family: var(--f-rune); font-size: 58px; line-height: 1; color: var(--gold); text-shadow: 0 0 18px rgba(226,169,75,.6); }
+.go-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.go-grid .stat .val { font-size: 18px; }
+.newbest { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--gold); color: var(--gold-ink); font-size: 12px; font-weight: 800; vertical-align: middle; }
+.reward { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--gold); background: rgba(226,169,75,.08); }
+.reward b { color: var(--gold); font-size: 20px; }
+.codex { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin: 10px 0 14px; }
+.cx { padding: 8px 6px; border-radius: 10px; background: var(--cell); border: 1px solid var(--line); text-align: center; }
+.cx .g { font-family: var(--f-rune); font-size: 30px; line-height: 1.2; color: hsl(var(--h) 90% 80%); }
+.cx .n { font-weight: 800; font-size: 14px; }
+.cx .m { font-size: 12px; color: var(--muted); }
+.cx.locked .g { color: var(--line); }
+.runs { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.runs th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 700; padding: 4px 6px; }
+.runs td { padding: 6px; border-top: 1px solid var(--line); }
+.runs td.num { text-align: right; }
+.runs .rg { font-family: var(--f-rune); color: var(--gold); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tile { transition: none; }
+  .board-wrap.shake, .board-wrap.shake-big, .badge, .tile.ascended .face { animation: none; }
+  .float { animation-duration: 1.2s; }
+}
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1>Rune Merge</h1>
+    <div class="icons">
+      <button class="icon-btn" id="soundBtn" type="button" aria-label="Toggle sound">Sound on</button>
+      <button class="icon-btn" id="helpBtn" type="button" aria-label="How to play">?</button>
+    </div>
+  </header>
+
+  <div class="stats" aria-live="polite">
+    <div class="stat"><span class="lbl">Score</span><span class="val" id="score">0</span></div>
+    <div class="stat"><span class="lbl" id="bestLbl">Best</span><span class="val" id="best">0</span></div>
+    <div class="stat shard"><span class="lbl">Shards</span><span class="val" id="shards">0</span></div>
+  </div>
+
+  <div class="meta-row">
+    <span id="modeLabel">Run 1</span>
+    <span id="tierLabel">Highest <b>Fehu</b></span>
+    <span id="threat">Stones <b>0%</b></span>
+  </div>
+
+  <div class="mana" aria-label="Mana">
+    <div class="mana-fill" id="manaFill"></div>
+    <div id="manaTicks"></div>
+    <div class="mana-text" id="manaText">0 / 100 mana</div>
+  </div>
+
+  <div class="board-wrap" id="boardWrap">
+    <div class="board">
+      <div class="cells" id="cells"></div>
+      <div class="tiles" id="tiles"></div>
+    </div>
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <div class="spells" id="spells"></div>
+
+  <nav class="actions">
+    <button class="btn" type="button" id="newBtn">New run</button>
+    <button class="btn" type="button" id="dailyBtn">Daily</button>
+    <button class="btn" type="button" id="upgBtn">Upgrades</button>
+    <button class="btn" type="button" id="codexBtn">Codex</button>
+  </nav>
+  <p class="hint">Swipe or use arrow keys. Spells: keys 1–4.</p>
+</div>
+
+<canvas id="fx"></canvas>
+<div class="modal" id="modal" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+
+<script>
+(() => {
+'use strict';
+const N = 5, MAXMANA = 100;
+const META_KEY = 'runeMerge.meta.v1', RUN_KEY = 'runeMerge.run.v1';
+
+// The 24 runes of the Elder Futhark, in order: glyph, name, meaning
+const RUNES = [
+  ['ᚠ','Fehu','cattle, wealth'],['ᚢ','Uruz','the aurochs'],['ᚦ','Thurisaz','the giant'],['ᚨ','Ansuz','a god'],
+  ['ᚱ','Raidho','the ride'],['ᚲ','Kenaz','the torch'],['ᚷ','Gebo','the gift'],['ᚹ','Wunjo','joy'],
+  ['ᚺ','Hagalaz','hail'],['ᚾ','Naudiz','need'],['ᛁ','Isa','ice'],['ᛃ','Jera','the year, harvest'],
+  ['ᛇ','Eihwaz','the yew'],['ᛈ','Perthro','the lot-cup'],['ᛉ','Algiz','the elk'],['ᛊ','Sowilo','the sun'],
+  ['ᛏ','Tiwaz','the god Tyr'],['ᛒ','Berkanan','the birch'],['ᛖ','Ehwaz','the horse'],['ᛗ','Mannaz','mankind'],
+  ['ᛚ','Laguz','water'],['ᛜ','Ingwaz','the god Ing'],['ᛞ','Dagaz','day'],['ᛟ','Othala','heritage']
+];
+const HUES = [205, 185, 160, 128, 92, 48, 28, 8, 340, 305, 272, 240];
+const rune = t => RUNES[Math.max(1, Math.min(t, 24)) - 1];
+const hue = t => HUES[(t - 1) % HUES.length];
+
+const SPELLS = [
+  { id: 'shatter',   g: 'ᚺ', name: 'Shatter',   cost: 30, target: 'any',  desc: 'Destroy one rune or stone.' },
+  { id: 'stasis',    g: 'ᛁ', name: 'Stasis',    cost: 40, target: null,   desc: 'Nothing new falls for 3 moves.' },
+  { id: 'transmute', g: 'ᛃ', name: 'Transmute', cost: 55, target: 'rune', desc: 'Raise one rune by a tier.' },
+  { id: 'purge',     g: 'ᛊ', name: 'Purge',     cost: 70, target: null,   desc: 'Destroy every stone on the board.' }
+];
+const UPG = [
+  { id: 'well',      name: 'Deep Well',   max: 4, base: 30,  desc: 'Start each run with +15 mana per level.' },
+  { id: 'fortune',   name: 'Fortune',     max: 5, base: 40,  desc: 'New runes arrive as Uruz 4% more often per level.' },
+  { id: 'siphon',    name: 'Siphon',      max: 4, base: 45,  desc: 'Merges give 20% more mana per level.' },
+  { id: 'ward',      name: 'Stone Ward',  max: 5, base: 50,  desc: 'Stones fall 12% less often per level.' },
+  { id: 'greed',     name: 'Shard Greed', max: 5, base: 60,  desc: 'Earn 15% more shards per run per level.' },
+  { id: 'stasis',    name: 'Stasis',      max: 1, base: 60,  g: 'ᛁ', desc: 'Learn the spell. 40 mana: nothing new falls for 3 moves.' },
+  { id: 'transmute', name: 'Transmute',   max: 1, base: 90,  g: 'ᛃ', desc: 'Learn the spell. 55 mana: raise any rune one tier.' },
+  { id: 'purge',     name: 'Purge',       max: 1, base: 150, g: 'ᛊ', desc: 'Learn the spell. 70 mana: destroy every stone.' }
+];
+const upCost = (u, l) => Math.round(u.base * Math.pow(1.7, l));
+
+// ---------- storage ----------
+const load = k => { try { const s = localStorage.getItem(k); return s ? JSON.parse(s) : null; } catch (e) { return null; } };
+const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const meta = Object.assign({ shards: 0, upg: {}, bestStd: 0, daily: {}, top: [], codex: 0, runs: 0, muted: false, seenHelp: false }, load(META_KEY) || {});
+meta.upg = meta.upg || {};
+const saveMeta = () => store(META_KEY, meta);
+
+// ---------- helpers ----------
+const $ = s => document.querySelector(s);
+const fmt = n => Math.round(n).toLocaleString('en-US');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; };
+
+let state = null, targeting = null, nextId = 1;
+const els = new Map();
+const mk = t => ({ id: nextId++, t, stone: false });
+const mkStone = () => ({ id: nextId++, t: 0, stone: true });
+
+// Seeded RNG so daily runs share a seed. Visual effects use Math.random instead.
+function rand() {
+  let t = state.rng = (state.rng + 0x6D2B79F5) | 0;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+const upgLevel = id => state && state.mode === 'daily' ? 0 : (meta.upg[id] || 0);
+const spellUnlocked = id => id === 'shatter' || (state.mode !== 'daily' && (meta.upg[id] || 0) > 0);
+
+// ---------- DOM ----------
+const boardWrap = $('#boardWrap'), tilesEl = $('#tiles'), cellsEl = $('#cells');
+for (let i = 0; i < N * N; i++) { const d = document.createElement('div'); d.className = 'cell'; cellsEl.appendChild(d); }
+const cellEls = [...cellsEl.children];
+const spellBtns = {};
+SPELLS.forEach((s, i) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'spell';
+  b.innerHTML = `<span class="sg">${s.g}</span><span class="sn">${s.name}</span><span class="sc"></span>`;
+  b.title = `${s.desc} (key ${i + 1})`;
+  b.addEventListener('click', () => clickSpell(s));
+  $('#spells').appendChild(b);
+  spellBtns[s.id] = b;
+});
+
+// ---------- audio ----------
+let ac = null;
+function audio() {
+  if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+  if (ac.state === 'suspended') ac.resume();
+  return ac;
+}
+const PENTA = [0, 2, 4, 7, 9];
+const noteFreq = i => 196 * Math.pow(2, (Math.floor(i / 5) * 12 + PENTA[((i % 5) + 5) % 5]) / 12);
+function tone(freq, dur = .12, type = 'triangle', vol = .12, when = 0) {
+  if (meta.muted) return; const a = audio(); if (!a) return;
+  const t = a.currentTime + when, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur + .03);
+}
+function noise(dur, vol, freq) {
+  if (meta.muted) return; const a = audio(); if (!a) return;
+  const buf = a.createBuffer(1, Math.floor(a.sampleRate * dur), a.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  f.type = 'bandpass'; f.frequency.value = freq; g.gain.value = vol;
+  src.buffer = buf; src.connect(f).connect(g).connect(a.destination); src.start();
+}
+function sweep(f1, f2, dur) {
+  if (meta.muted) return; const a = audio(); if (!a) return;
+  const t = a.currentTime, o = a.createOscillator(), lp = a.createBiquadFilter(), g = a.createGain();
+  o.type = 'sawtooth'; o.frequency.setValueAtTime(f1, t); o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  lp.type = 'lowpass'; lp.frequency.value = 1600;
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.06, t + .03); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(lp).connect(g).connect(a.destination); o.start(t); o.stop(t + dur + .03);
+}
+const sfx = {
+  slide: () => tone(150, .06, 'sine', .035),
+  bump: () => tone(70, .08, 'sine', .05),
+  merge: (t, i) => { tone(noteFreq(t + 3), .22, 'triangle', .12, i * .045); tone(noteFreq(t + 8), .12, 'sine', .04, i * .045 + .02); },
+  combo: n => { for (let i = 0; i < Math.min(n, 5); i++) tone(noteFreq(10 + i * 2), .14, 'square', .03, .12 + i * .05); },
+  crack: () => noise(.14, .5, 1600),
+  shatter: () => { noise(.28, .7, 800); tone(90, .25, 'sawtooth', .05); },
+  cast: () => sweep(260, 1300, .4),
+  ready: () => { tone(noteFreq(14), .1, 'sine', .06); tone(noteFreq(17), .18, 'sine', .06, .07); },
+  discover: () => [0, 2, 4, 7, 9].forEach((d, i) => tone(noteFreq(12 + d), .32, 'triangle', .08, i * .08)),
+  over: () => [9, 7, 5, 2, 0].forEach((d, i) => tone(noteFreq(d), .4, 'triangle', .08, i * .14)),
+  buy: () => { tone(noteFreq(12), .08, 'square', .04); tone(noteFreq(16), .16, 'square', .04, .06); }
+};
+
+// ---------- particles ----------
+const cv = $('#fx'), cx = cv.getContext('2d');
+let parts = [], raf = 0;
+function sizeCanvas() { const d = Math.min(2, window.devicePixelRatio || 1); cv.width = innerWidth * d; cv.height = innerHeight * d; cx.setTransform(d, 0, 0, d, 0, 0); }
+sizeCanvas(); addEventListener('resize', sizeCanvas);
+function burst(x, y, h, n = 14, sp = 3, sat = 90) {
+  if (reduced) n = Math.ceil(n / 3);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = (.4 + Math.random()) * sp;
+    parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 1, life: 1, d: .016 + Math.random() * .02, s: 1.5 + Math.random() * 3, h, sat });
+  }
+  if (!raf) raf = requestAnimationFrame(tick);
+}
+function tick() {
+  cx.clearRect(0, 0, innerWidth, innerHeight);
+  cx.globalCompositeOperation = 'lighter';
+  parts = parts.filter(p => {
+    p.x += p.vx; p.y += p.vy; p.vy += .1; p.vx *= .98; p.life -= p.d;
+    if (p.life <= 0) return false;
+    cx.fillStyle = `hsla(${p.h},${p.sat}%,65%,${p.life})`;
+    cx.beginPath(); cx.arc(p.x, p.y, p.s * p.life + .5, 0, 7); cx.fill();
+    return true;
+  });
+  raf = parts.length ? requestAnimationFrame(tick) : 0;
+  if (!raf) cx.clearRect(0, 0, innerWidth, innerHeight);
+}
+function cellCenter(r, c) { const b = cellEls[r * N + c].getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; }
+function floatText(x, y, text, cls = '') {
+  const d = document.createElement('div'); d.className = 'float ' + cls; d.textContent = text;
+  d.style.left = x + 'px'; d.style.top = y + 'px'; document.body.appendChild(d);
+  setTimeout(() => d.remove(), 950);
+}
+function shake(big) {
+  if (reduced) return;
+  boardWrap.classList.remove('shake', 'shake-big'); void boardWrap.offsetWidth;
+  boardWrap.classList.add(big ? 'shake-big' : 'shake');
+}
+let toastTimer = 0;
+function toast(msg, sticky = false) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  if (!sticky) toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+const hideToast = () => $('#toast').classList.remove('show');
+
+// ---------- game state ----------
+const emptyGrid = () => Array.from({ length: N }, () => Array(N).fill(null));
+function empties() { const e = []; for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (!state.grid[r][c]) e.push([r, c]); return e; }
+function spawnRune() {
+  const e = empties(); if (!e.length) return;
+  const [r, c] = e[Math.floor(rand() * e.length)];
+  const t = rand() < .1 + .04 * upgLevel('fortune') ? 2 : 1;
+  state.grid[r][c] = mk(t);
+  state.maxTier = Math.max(state.maxTier, t);
+}
+function stoneChance() {
+  if (state.moves < 12) return 0;
+  return Math.min(.3, .05 + (state.moves - 12) * .0025) * (1 - .12 * upgLevel('ward'));
+}
+function maybeStone() {
+  if (rand() >= stoneChance()) return;
+  const e = empties(); if (!e.length) return;
+  const [r, c] = e[Math.floor(rand() * e.length)];
+  state.grid[r][c] = mkStone();
+}
+function newRun(mode = 'std') {
+  const date = todayStr();
+  state = {
+    mode, date, rng: mode === 'daily' ? hash('rune-merge:' + date) : (Math.random() * 4294967296) >>> 0,
+    grid: emptyGrid(), score: 0, mana: 0, moves: 0, stasis: 0, maxTier: 1, bestCombo: 0, over: false
+  };
+  state.mana = Math.min(MAXMANA, upgLevel('well') * 15);
+  cancelTarget();
+  tilesEl.innerHTML = ''; els.clear();
+  spawnRune(); spawnRune();
+  render(); save();
+}
+function save() {
+  store(RUN_KEY, { ...state, grid: state.grid.map(row => row.map(t => !t ? 0 : t.stone ? -1 : t.t)) });
+}
+function loadRun() {
+  const s = load(RUN_KEY);
+  if (!s || s.over || !Array.isArray(s.grid) || s.grid.length !== N) return false;
+  state = { ...s, grid: s.grid.map(row => row.map(v => v === 0 ? null : v === -1 ? mkStone() : mk(v))) };
+  return true;
+}
+
+const VEC = { left: [0, -1], right: [0, 1], up: [-1, 0], down: [1, 0] };
+function move(dir) {
+  if (!state || state.over || !$('#modal').hidden) return;
+  if (targeting) cancelTarget();
+  const [dr, dc] = VEC[dir], g = state.grid;
+  const rows = [0, 1, 2, 3, 4], cols = [0, 1, 2, 3, 4];
+  if (dr === 1) rows.reverse();
+  if (dc === 1) cols.reverse();
+  const merges = [], fresh = new Set();
+  let moved = false;
+  for (const r of rows) for (const c of cols) {
+    const tile = g[r][c]; if (!tile) continue;
+    let nr = r, nc = c, merged = false;
+    for (;;) {
+      const tr = nr + dr, tc = nc + dc;
+      if (tr < 0 || tr >= N || tc < 0 || tc >= N) break;
+      const o = g[tr][tc];
+      if (!o) { nr = tr; nc = tc; continue; }
+      if (!tile.stone && !o.stone && o.t === tile.t && !fresh.has(o.id)) {
+        const nt = mk(tile.t + 1); nt.mergedFrom = [o, tile];
+        g[tr][tc] = nt; g[r][c] = null; fresh.add(nt.id);
+        merges.push({ r: tr, c: tc, t: nt.t }); merged = moved = true;
+      }
+      break;
+    }
+    if (!merged && (nr !== r || nc !== c)) { g[nr][nc] = tile; g[r][c] = null; moved = true; }
+  }
+  if (!moved) { bump(dr, dc); return; }
+
+  state.moves++;
+  let pts = 0, manaGain = 0, mult = 1;
+  const broken = [];
+  if (merges.length) {
+    mult = 1 + (merges.length - 1) * .5;
+    for (const m of merges) { pts += 2 ** m.t; manaGain += m.t; }
+    pts = Math.round(pts * mult);
+    manaGain *= 1 + .2 * upgLevel('siphon');
+    for (const m of merges) for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const rr = m.r + a, cc = m.c + b;
+      if (rr < 0 || rr >= N || cc < 0 || cc >= N) continue;
+      const s = g[rr][cc];
+      if (s && s.stone) { g[rr][cc] = null; broken.push({ r: rr, c: cc }); pts += 25; manaGain += 5; }
+    }
+    state.score += pts;
+    state.bestCombo = Math.max(state.bestCombo, merges.length);
+    state.maxTier = Math.max(state.maxTier, ...merges.map(m => m.t));
+  }
+  const prevMana = state.mana;
+  state.mana = Math.min(MAXMANA, state.mana + Math.round(manaGain));
+  if (state.stasis > 0) state.stasis--;
+  else { spawnRune(); maybeStone(); }
+  render();
+
+  if (merges.length) {
+    merges.forEach((m, i) => { const [x, y] = cellCenter(m.r, m.c); burst(x, y, hue(m.t), 8 + m.t * 2, 2.2 + m.t * .3); sfx.merge(m.t, i); });
+    const top = merges.reduce((a, b) => b.t > a.t ? b : a);
+    const [x, y] = cellCenter(top.r, top.c);
+    floatText(x, y, '+' + fmt(pts));
+    if (merges.length >= 2) {
+      const b = boardWrap.getBoundingClientRect();
+      floatText(b.left + b.width / 2, b.top + b.height / 2, `Combo ×${mult}`, 'combo');
+      sfx.combo(merges.length);
+    }
+    if (merges.length >= 3 || top.t >= 7) shake(merges.length >= 4 || top.t >= 9);
+  } else sfx.slide();
+  broken.forEach(s => { const [x, y] = cellCenter(s.r, s.c); burst(x, y, 200, 16, 3.2, 8); floatText(x, y, 'Stone broken', 'small'); });
+  if (broken.length) sfx.crack();
+
+  discover();
+  manaReady(prevMana);
+  save();
+  checkEnd();
+}
+function bump(dr, dc) {
+  sfx.bump();
+  if (reduced || !boardWrap.animate) return;
+  boardWrap.animate([{ transform: 'none' }, { transform: `translate(${dc * 5}px,${dr * 5}px)` }, { transform: 'none' }], { duration: 140 });
+}
+function hasMoves() {
+  const g = state.grid;
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+    const t = g[r][c]; if (!t) return true; if (t.stone) continue;
+    const rt = c + 1 < N && g[r][c + 1], dt = r + 1 < N && g[r + 1][c];
+    if (rt && !rt.stone && rt.t === t.t) return true;
+    if (dt && !dt.stone && dt.t === t.t) return true;
+  }
+  return false;
+}
+const hasStones = () => state.grid.some(row => row.some(t => t && t.stone));
+function checkEnd() {
+  if (state.over || hasMoves()) return;
+  const usable = SPELLS.filter(s => s.id !== 'stasis' && spellUnlocked(s.id) && state.mana >= s.cost && (s.id !== 'purge' || hasStones()));
+  if (usable.length) { toast('The board is locked. Cast a spell to break free.', true); return; }
+  endRun();
+}
+function discover() {
+  if (state.maxTier <= meta.codex) return;
+  let bonus = 0;
+  for (let t = meta.codex + 1; t <= state.maxTier; t++) if (t >= 3) bonus += t * 2;
+  meta.codex = state.maxTier; meta.shards += bonus; saveMeta();
+  if (bonus > 0) showBanner(state.maxTier, bonus);
+  updateHud();
+}
+function showBanner(t, bonus) {
+  const [g, name, meaning] = rune(t);
+  const d = document.createElement('div'); d.className = 'banner';
+  d.innerHTML = `<div class="banner-card"><div class="bg">${g}</div><div class="bt">New rune: ${name}</div><div class="bm">“${meaning}” · Tier ${t}</div><div class="bb">+${bonus} shards</div></div>`;
+  boardWrap.appendChild(d);
+  setTimeout(() => d.remove(), 1950);
+  const b = boardWrap.getBoundingClientRect();
+  burst(b.left + b.width / 2, b.top + b.height / 2, 40, 40, 5);
+  sfx.discover();
+}
+function manaReady(prev) {
+  for (const s of SPELLS) {
+    if (spellUnlocked(s.id) && prev < s.cost && state.mana >= s.cost) {
+      const b = spellBtns[s.id]; b.classList.remove('flash'); void b.offsetWidth; b.classList.add('flash');
+      sfx.ready();
+    }
+  }
+}
+
+// ---------- spells ----------
+function clickSpell(s) {
+  if (!state || state.over) return;
+  audio();
+  if (!spellUnlocked(s.id)) {
+    if (state.mode === 'daily') toast('Daily runs allow Shatter only.');
+    else openUpgrades();
+    return;
+  }
+  if (state.mana < s.cost) { toast(`${s.name} needs ${s.cost} mana. Merge runes to charge it.`); return; }
+  if (s.target) {
+    if (targeting === s.id) { cancelTarget(); return; }
+    targeting = s.id; boardWrap.classList.add('targeting');
+    toast(s.target === 'any' ? 'Tap a rune or stone to shatter it.' : 'Tap a rune to raise it one tier.', true);
+    updateHud();
+  } else cast(s, null);
+}
+function cancelTarget() {
+  if (!targeting) return;
+  targeting = null; boardWrap.classList.remove('targeting'); hideToast();
+  if (state) updateHud();
+}
+function cast(s, cell) {
+  const g = state.grid;
+  if (s.id === 'shatter') {
+    const [r, c] = cell, t = g[r][c];
+    if (!t) { toast('That cell is empty. Pick a rune or stone.', true); return; }
+    g[r][c] = null;
+    const [x, y] = cellCenter(r, c); burst(x, y, t.stone ? 200 : hue(t.t), 24, 4, t.stone ? 8 : 90);
+    sfx.shatter(); shake(false);
+  } else if (s.id === 'transmute') {
+    const [r, c] = cell, t = g[r][c];
+    if (!t || t.stone) { toast('Transmute works on runes only.', true); return; }
+    t.t++; state.maxTier = Math.max(state.maxTier, t.t);
+    const [x, y] = cellCenter(r, c); burst(x, y, hue(t.t), 22, 3.5);
+    sfx.cast();
+  } else if (s.id === 'stasis') {
+    state.stasis += 3;
+    const b = boardWrap.getBoundingClientRect(); burst(b.left + b.width / 2, b.top + b.height / 2, 195, 30, 5);
+    floatText(b.left + b.width / 2, b.top + b.height / 2, 'Stasis', 'combo');
+    sfx.cast();
+  } else if (s.id === 'purge') {
+    if (!hasStones()) { toast('There are no stones to purge.'); return; }
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (g[r][c] && g[r][c].stone) {
+      g[r][c] = null; const [x, y] = cellCenter(r, c); burst(x, y, 45, 14, 3.5);
+    }
+    sfx.cast(); sfx.crack(); shake(true);
+  }
+  state.mana -= s.cost;
+  targeting = null; boardWrap.classList.remove('targeting'); hideToast();
+  render(); discover(); save(); checkEnd();
+}
+
+// ---------- end of run ----------
+const calcShards = () => Math.round((Math.floor(Math.sqrt(state.score)) + state.maxTier * 3) * (1 + .15 * upgLevel('greed')));
+function bankRun() {
+  const reward = calcShards();
+  let newBest = false;
+  if (state.mode === 'daily') {
+    if (state.score > (meta.daily[state.date] || 0)) { meta.daily[state.date] = state.score; newBest = true; }
+  } else if (state.score > meta.bestStd) { meta.bestStd = state.score; newBest = true; }
+  meta.top.push({ s: state.score, t: state.maxTier, d: state.date, m: state.mode });
+  meta.top.sort((a, b) => b.s - a.s); meta.top = meta.top.slice(0, 5);
+  meta.shards += reward; meta.runs++;
+  state.over = true;
+  saveMeta(); save();
+  return { reward, newBest };
+}
+const affordable = () => UPG.filter(u => (meta.upg[u.id] || 0) < u.max && meta.shards >= upCost(u, meta.upg[u.id] || 0)).length;
+function endRun() {
+  hideToast();
+  const { reward, newBest } = bankRun();
+  updateHud();
+  sfx.over();
+  const g = state.grid; let top = 0;
+  for (const row of g) for (const t of row) if (t && !t.stone) top = Math.max(top, t.t);
+  let near = 0, count = 0;
+  for (const row of g) for (const t of row) if (t && !t.stone) {
+    if (t.t === top) count++;
+    if (t.t >= top - 2) near += 2 ** t.t;
+  }
+  const [ng, nn] = rune(top + 1);
+  const nearLine = count >= 2
+    ? `Two ${rune(top)[1]} runes were on the board, one merge from ${nn} <span class="rg">${ng}</span>.`
+    : `You were ${Math.min(99, Math.floor(near / 2 ** (top + 1) * 100))}% of the way to ${nn}, Tier ${top + 1}.`;
+  const [mg, mn, mm] = rune(state.maxTier);
+  const can = affordable();
+  setTimeout(() => openModal(`
+    <h2>The stones have settled</h2>
+    <div class="go-hero"><div class="go-rune">${mg}</div><div><div style="font-weight:800;font-size:18px">${mn}, Tier ${state.maxTier}</div><div class="note">“${mm}” · ${state.mode === 'daily' ? 'Daily ' + state.date : 'Run ' + meta.runs}</div></div></div>
+    <div class="go-grid">
+      <div class="stat"><span class="lbl">Score</span><span class="val">${fmt(state.score)}</span></div>
+      <div class="stat"><span class="lbl">Moves</span><span class="val">${state.moves}</span></div>
+      <div class="stat"><span class="lbl">Best combo</span><span class="val">×${state.bestCombo}</span></div>
+    </div>
+    <p>${newBest ? '<b>New best score!</b> ' : ''}${nearLine}</p>
+    <div class="reward"><b>+${reward}</b> shards earned · ${fmt(meta.shards)} total${can ? `<div class="note" style="margin-top:4px">You can afford ${can} upgrade${can > 1 ? 's' : ''} right now.</div>` : ''}</div>
+    <div class="row">
+      <button class="btn primary" data-act="again" autofocus>Play again</button>
+      <button class="btn" data-act="upgrades">Upgrades${can ? ` (${can})` : ''}</button>
+    </div>`, false), 650);
+}
+
+// ---------- render ----------
+function paint(el, tile) {
+  el.dataset.t = tile.t; el.dataset.s = tile.stone ? '1' : '0';
+  el.classList.toggle('stone', tile.stone);
+  el.classList.toggle('ascended', tile.t > 12);
+  if (tile.stone) { el.innerHTML = '<div class="face"><span class="crack"></span></div>'; return; }
+  el.style.setProperty('--h', hue(tile.t));
+  el.style.setProperty('--glow', (tile.t >= 6 ? (tile.t - 5) * 4 : 0) + 'px');
+  el.innerHTML = `<div class="face" title="${rune(tile.t)[1]}"><span class="glyph">${rune(tile.t)[0]}</span><span class="tn">${tile.t}</span></div>`;
+}
+function render() {
+  const g = state.grid, seen = new Set();
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+    const tile = g[r][c]; if (!tile) continue;
+    seen.add(tile.id);
+    let el = els.get(tile.id);
+    if (!el) {
+      el = document.createElement('div'); el.className = 'tile'; paint(el, tile);
+      el.style.setProperty('--r', r); el.style.setProperty('--c', c);
+      el.classList.add(tile.mergedFrom ? 'merged' : 'new');
+      tilesEl.appendChild(el); els.set(tile.id, el);
+      setTimeout(() => el.classList.remove('new', 'merged'), 400);
+    } else {
+      if (+el.dataset.t !== tile.t) { paint(el, tile); el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); }
+      el.style.setProperty('--r', r); el.style.setProperty('--c', c);
+    }
+    if (tile.mergedFrom) {
+      for (const s of tile.mergedFrom) {
+        const se = els.get(s.id); if (!se) continue;
+        els.delete(s.id);
+        se.style.setProperty('--r', r); se.style.setProperty('--c', c); se.style.zIndex = 1;
+        setTimeout(() => se.remove(), 130);
+      }
+      delete tile.mergedFrom;
+    }
+  }
+  for (const [id, el] of els) if (!seen.has(id)) {
+    els.delete(id); el.classList.add('vanish'); setTimeout(() => el.remove(), 280);
+  }
+  updateHud();
+}
+function updateHud() {
+  const daily = state.mode === 'daily';
+  $('#score').textContent = fmt(state.score);
+  $('#bestLbl').textContent = daily ? 'Today’s best' : 'Best';
+  $('#best').textContent = fmt(daily ? (meta.daily[state.date] || 0) : meta.bestStd);
+  $('#shards').textContent = fmt(meta.shards);
+  $('#modeLabel').textContent = daily ? 'Daily run' : `Run ${meta.runs + (state.over ? 0 : 1)}`;
+  const [tg, tn] = rune(state.maxTier);
+  $('#tierLabel').innerHTML = `Highest <span class="rg">${tg}</span> <b>${tn}</b>`;
+  const sc = stoneChance();
+  $('#threat').innerHTML = `Stones <b>${Math.round(sc * 100)}%</b>`;
+  $('#threat').classList.toggle('hot', sc >= .15);
+  $('#manaFill').style.width = (state.mana / MAXMANA * 100) + '%';
+  $('#manaText').textContent = `${state.mana} / ${MAXMANA} mana` + (state.stasis ? ` · Stasis ${state.stasis}` : '');
+  $('#manaTicks').innerHTML = SPELLS.filter(s => spellUnlocked(s.id)).map(s => `<span class="mana-tick" style="left:${s.cost}%"></span>`).join('');
+  for (const s of SPELLS) {
+    const b = spellBtns[s.id], un = spellUnlocked(s.id);
+    b.classList.toggle('locked', !un);
+    b.classList.toggle('ready', un && state.mana >= s.cost && !state.over);
+    b.classList.toggle('active', targeting === s.id);
+    b.querySelector('.sc').textContent = un ? `${s.cost} mana` : daily ? 'Not in daily' : 'Locked';
+  }
+  const can = affordable(), ub = $('#upgBtn');
+  ub.innerHTML = 'Upgrades' + (can ? `<span class="badge">${can}</span>` : '');
+  $('#soundBtn').textContent = meta.muted ? 'Sound off' : 'Sound on';
+}
+
+// ---------- modals ----------
+let modalClosable = true;
+function openModal(html, closable = true) {
+  cancelTarget();
+  $('#sheet').innerHTML = html; $('#modal').hidden = false; modalClosable = closable;
+  const f = $('#sheet [autofocus]') || $('#sheet button'); if (f) f.focus();
+}
+function closeModal() {
+  $('#modal').hidden = true;
+  if (!meta.seenHelp) { meta.seenHelp = true; saveMeta(); }
+  if (state.over) newRun(state.mode);
+}
+function helpHtml() {
+  return `<h2>How to play</h2>
+  <ol class="rules">
+    <li>Swipe, or use the arrow keys or WASD, to slide every rune. Two matching runes that collide merge into the next rune of the Elder Futhark.</li>
+    <li>Merges charge mana. Several merges in one swipe score a combo bonus.</li>
+    <li>From move 12, stones start to fall. They never merge, but any merge next to a stone breaks it.</li>
+    <li>Spend mana on spells (keys 1–4). <span class="rg">ᚺ</span>Shatter is always ready. Learn the others in Upgrades.</li>
+    <li>The run ends when the board is full, nothing can merge, and no spell can help.</li>
+    <li>Every run earns shards. Reaching a rune for the first time pays a bonus.</li>
+  </ol>
+  <p class="note">Daily runs use today’s seed, skip your upgrades and allow Shatter only. Your best daily score is kept per day.</p>
+  <div class="row"><button class="btn primary" data-act="close" autofocus>${meta.seenHelp ? 'Back to the board' : 'Start merging'}</button></div>`;
+}
+function upgradesHtml() {
+  return `<div class="sheet-head"><h2>Upgrades</h2><span class="purse">✦ ${fmt(meta.shards)}</span></div>
+  <p class="note">Upgrades apply to standard runs. Daily runs are played without them.</p>
+  <div class="upg-list">${UPG.map(u => {
+    const l = meta.upg[u.id] || 0, maxed = l >= u.max, cost = upCost(u, l), can = !maxed && meta.shards >= cost;
+    return `<div class="upg"><div class="upg-main">
+      <div class="upg-name">${u.g ? `<span class="rg">${u.g}</span>` : ''}${u.name}</div>
+      <div class="upg-desc">${u.desc}</div>
+      ${u.max > 1 ? `<div class="pips">${Array.from({ length: u.max }, (_, i) => `<i class="${i < l ? 'on' : ''}"></i>`).join('')}</div>` : ''}
+    </div><button class="btn ${can ? 'primary' : ''}" data-act="buy" data-arg="${u.id}" ${can ? '' : 'disabled'}>${maxed ? (u.max > 1 ? 'Maxed' : 'Learned') : '✦ ' + fmt(cost)}</button></div>`;
+  }).join('')}</div>
+  <div class="row"><button class="btn" data-act="close">${state.over ? 'Start next run' : 'Back to the board'}</button></div>`;
+}
+function openUpgrades() { openModal(upgradesHtml(), true); }
+function codexHtml() {
+  const found = meta.codex;
+  const today = meta.daily[todayStr()] || 0;
+  return `<div class="sheet-head"><h2>Codex</h2><span class="purse">${Math.min(found, 24)} / 24</span></div>
+  <p class="note">Each rune of the Elder Futhark you reach is recorded here.</p>
+  <div class="codex">${RUNES.map(([g, n, m], i) => {
+    const t = i + 1, ok = t <= found;
+    return `<div class="cx ${ok ? '' : 'locked'}" style="--h:${hue(t)}"><div class="g">${ok ? g : '?'}</div><div class="n">${ok ? n : 'Tier ' + t}</div><div class="m">${ok ? m : 'undiscovered'}</div></div>`;
+  }).join('')}</div>
+  <h2 style="font-size:20px">Best runs</h2>
+  ${meta.top.length ? `<table class="runs"><thead><tr><th>Score</th><th>Rune</th><th>Mode</th><th>Date</th></tr></thead><tbody>${meta.top.map(r =>
+    `<tr><td class="num">${fmt(r.s)}</td><td><span class="rg">${rune(r.t)[0]}</span> ${rune(r.t)[1]}</td><td>${r.m === 'daily' ? 'Daily' : 'Standard'}</td><td>${r.d}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="note">Finish a run to see it here.</p>'}
+  <p class="note" style="margin-top:10px">Runs played: ${meta.runs} · Today’s daily best: ${fmt(today)}</p>
+  <div class="row"><button class="btn" data-act="close">Back to the board</button></div>`;
+}
+function requestNew(mode) {
+  if (state && !state.over && state.moves > 0) {
+    openModal(`<h2>End this run?</h2>
+      <p>You keep the shards it has earned so far: <b>+${calcShards()}</b>.</p>
+      <div class="row"><button class="btn primary" data-act="confirmNew" data-arg="${mode}">End run</button><button class="btn" data-act="close" autofocus>Keep playing</button></div>`);
+  } else { $('#modal').hidden = true; newRun(mode); }
+}
+const actions = {
+  close: closeModal,
+  again: () => { $('#modal').hidden = true; newRun(state.mode); },
+  upgrades: openUpgrades,
+  buy: id => {
+    const u = UPG.find(x => x.id === id), l = meta.upg[id] || 0, cost = upCost(u, l);
+    if (l >= u.max || meta.shards < cost) return;
+    meta.shards -= cost; meta.upg[id] = l + 1; saveMeta(); sfx.buy();
+    openUpgrades(); updateHud();
+  },
+  confirmNew: mode => {
+    const { reward } = bankRun();
+    $('#modal').hidden = true; newRun(mode);
+    toast(`+${reward} shards banked from your last run.`);
+  }
+};
+$('#sheet').addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b) { audio(); actions[b.dataset.act](b.dataset.arg); } });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && modalClosable) closeModal(); });
+
+// ---------- input ----------
+const KEYS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', a: 'left', d: 'right', w: 'up', s: 'down' };
+document.addEventListener('keydown', e => {
+  if (!$('#modal').hidden) { if (e.key === 'Escape' && modalClosable) closeModal(); return; }
+  const dir = KEYS[e.key] || KEYS[e.key.toLowerCase()];
+  if (dir) { e.preventDefault(); audio(); move(dir); return; }
+  if (e.key === 'Escape') cancelTarget();
+  const n = '1234'.indexOf(e.key);
+  if (n >= 0) clickSpell(SPELLS[n]);
+});
+let start = null;
+boardWrap.addEventListener('pointerdown', e => {
+  start = { x: e.clientX, y: e.clientY };
+  try { boardWrap.setPointerCapture(e.pointerId); } catch (err) {}
+  audio();
+});
+boardWrap.addEventListener('pointerup', e => {
+  if (!start) return;
+  const dx = e.clientX - start.x, dy = e.clientY - start.y; start = null;
+  if (Math.hypot(dx, dy) > 24) {
+    move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+  } else if (targeting) {
+    const i = cellEls.findIndex(el => { const b = el.getBoundingClientRect(); return e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom; });
+    if (i >= 0) cast(SPELLS.find(s => s.id === targeting), [Math.floor(i / N), i % N]);
+  }
+});
+boardWrap.addEventListener('pointercancel', () => { start = null; });
+
+$('#newBtn').addEventListener('click', () => requestNew('std'));
+$('#dailyBtn').addEventListener('click', () => {
+  if (state.mode === 'daily' && !state.over && state.date === todayStr()) { toast('You are already playing today’s daily.'); return; }
+  requestNew('daily');
+});
+$('#upgBtn').addEventListener('click', openUpgrades);
+$('#codexBtn').addEventListener('click', () => openModal(codexHtml()));
+$('#helpBtn').addEventListener('click', () => openModal(helpHtml()));
+$('#soundBtn').addEventListener('click', () => { meta.muted = !meta.muted; saveMeta(); updateHud(); if (!meta.muted) sfx.ready(); });
+
+// ---------- boot ----------
+if (loadRun()) { render(); checkEnd(); } else newRun('std');
+if (!meta.seenHelp) openModal(helpHtml());
+})();
+</script>
+
+</html>
